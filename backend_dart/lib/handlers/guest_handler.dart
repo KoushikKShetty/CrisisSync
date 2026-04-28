@@ -43,6 +43,20 @@ String _randHex(int bytes) {
   return buf.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
 }
 
+/// Haversine distance between two GPS coordinates in metres
+double _haversineMeters(
+    double lat1, double lng1, double lat2, double lng2) {
+  const r = 6371000.0; // Earth radius in metres
+  final dLat = (lat2 - lat1) * (pi / 180);
+  final dLng = (lng2 - lng1) * (pi / 180);
+  final a = sin(dLat / 2) * sin(dLat / 2) +
+      cos(lat1 * pi / 180) *
+          cos(lat2 * pi / 180) *
+          sin(dLng / 2) *
+          sin(dLng / 2);
+  return r * 2 * atan2(sqrt(a), sqrt(1 - a));
+}
+
 String _signQr(Map<String, dynamic> payload, String secret) {
   final jwt = JWT(payload, issuer: 'crisisync');
   return jwt.sign(SecretKey(secret),
@@ -156,6 +170,10 @@ Router buildGuestRouter() {
   });
 
   // POST /guest/verify-token  (Flutter guest app calls this to validate QR token)
+  // Body: { token, lat?, lng? }
+  // - lat/lng absent → LOCATION_REQUIRED (403)
+  // - lat/lng present but outside hotel → OUTSIDE_PROPERTY (403)
+  // - inside hotel → 200 with sessionToken
   router.post('/verify-token', (Request req) async {
     final body = await _parseBody(req);
     final token = body['token'] as String? ?? '';
@@ -163,6 +181,7 @@ Router buildGuestRouter() {
       return _json(400, {'error': 'token is required'});
     }
 
+    // ── Step 1: Verify JWT ────────────────────────────────────────
     final payload = _verifyQr(token, qrSecret);
     if (payload == null) {
       return _json(401, {'error': 'TOKEN_EXPIRED_OR_INVALID'});
@@ -174,11 +193,54 @@ Router buildGuestRouter() {
     if (_activeSessions[sessionKey]?['used'] == true) {
       return _json(409, {
         'error': 'SESSION_ALREADY_USED',
-        'message':
-            'This QR token is already in use. Please re-scan a fresh QR code.',
+        'message': 'This QR token is already in use. Please re-scan a fresh QR code.',
       });
     }
 
+    // ── Step 2: Hard GPS location gate ───────────────────────────
+    final lat = body['lat'];
+    final lng = body['lng'];
+
+    if (lat == null || lng == null) {
+      return _json(403, {
+        'error': 'LOCATION_REQUIRED',
+        'message':
+            'Location access is required to use the CrisisSync guest portal. '
+            'Please enable GPS and re-scan the QR code.',
+      });
+    }
+
+    // Hotel coordinates (configurable via .env)
+    final hotelLat =
+        double.tryParse(env('HOTEL_LAT', '12.9716')) ?? 12.9716;
+    final hotelLng =
+        double.tryParse(env('HOTEL_LNG', '77.5946')) ?? 77.5946;
+    final maxMeters =
+        double.tryParse(env('HOTEL_RADIUS_M', '300')) ?? 300.0;
+
+    final guestLat = double.tryParse(lat.toString());
+    final guestLng = double.tryParse(lng.toString());
+
+    if (guestLat == null || guestLng == null) {
+      return _json(400, {'error': 'Invalid lat/lng values'});
+    }
+
+    final distance = _haversineMeters(hotelLat, hotelLng, guestLat, guestLng);
+
+    if (distance > maxMeters) {
+      return _json(403, {
+        'error': 'OUTSIDE_PROPERTY',
+        'message':
+            'You appear to be ${distance.round()}m from the hotel. '
+            'This QR portal is only accessible from within the property. '
+            'Please ensure you are inside the hotel and try again.',
+        'distanceMeters': distance.round(),
+        'allowedRadius': maxMeters.round(),
+      });
+    }
+
+    // ── Step 3: Create session ────────────────────────────────────
+    final now = DateTime.now().millisecondsSinceEpoch;
     _activeSessions[sessionKey] = {
       'zoneId': payload['zoneId'],
       'zoneName': payload['zoneName'],
@@ -187,7 +249,6 @@ Router buildGuestRouter() {
     };
 
     // Clean expired sessions
-    final now = DateTime.now().millisecondsSinceEpoch;
     _activeSessions.removeWhere(
         (_, v) => now - (v['issuedAt'] as int) > _sessionTtlMs * 2);
 
@@ -201,8 +262,12 @@ Router buildGuestRouter() {
       'sessionToken': sessionToken,
       'zoneId': payload['zoneId'],
       'zoneName': payload['zoneName'],
+      'locationStatus': 'verified',
+      'locationVerified': true,
+      'distanceMeters': distance.round(),
     });
   });
+
 
   // POST /guest/verify-location
   router.post('/verify-location', (Request req) async {

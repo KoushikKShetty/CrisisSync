@@ -68,13 +68,34 @@ class _LandingScreenState extends State<LandingScreen>
       return;
     }
 
-    setState(() => _status = 'Establishing secure session...');
+    // ── Step 1: Get GPS BEFORE token verification ──────────────────
+    setState(() => _status = '📍 Verifying your location...');
+    final gpsResult = await _getGpsLocation();
+
+    if (gpsResult['blocked'] == true) {
+      setState(() {
+        _loading = false;
+        _error = true;
+        _errorTitle = gpsResult['title'] as String;
+        _errorMsg = gpsResult['message'] as String;
+      });
+      return;
+    }
+
+    // ── Step 2: Verify token + location together ────────────────────
+    setState(() => _status = '🔐 Establishing secure session...');
 
     try {
+      final body = <String, dynamic>{'token': token};
+      if (gpsResult['lat'] != null) {
+        body['lat'] = gpsResult['lat'];
+        body['lng'] = gpsResult['lng'];
+      }
+
       final res = await http.post(
         Uri.parse('$_backendUrl/guest/verify-token'),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'token': token}),
+        body: jsonEncode(body),
       );
 
       final data = jsonDecode(res.body) as Map<String, dynamic>;
@@ -83,42 +104,50 @@ class _LandingScreenState extends State<LandingScreen>
         final sessionToken = data['sessionToken'] as String;
         final zoneName = data['zoneName'] as String? ?? zone;
         final zoneId = data['zoneId'] as String? ?? 'lobby';
-
-        setState(() => _status = 'Verifying your location...');
-        await _verifyLocation(sessionToken, zoneName, zoneId);
+        final locationStatus = data['locationStatus'] as String? ?? 'verified';
+        _goToChat(sessionToken, zoneName, zoneId, locationStatus);
       } else {
         final errCode = data['error'] as String? ?? 'ERROR';
+        String title = 'Access Denied';
+        String msg = data['message'] as String? ?? 'Unable to start session.';
         if (errCode == 'SESSION_ALREADY_USED') {
-          setState(() {
-            _loading = false;
-            _error = true;
-            _errorTitle = 'Session Already Used';
-            _errorMsg =
-                'This QR code has already been scanned. Each QR code can only be used once. Please re-scan the physical QR code to get a new session.';
-          });
-        } else {
-          setState(() {
-            _loading = false;
-            _error = true;
-            _errorTitle = 'QR Code Expired';
-            _errorMsg =
-                'This QR code has expired (valid 15 minutes). Please re-scan the QR code at the information point or ask a staff member.';
-          });
+          title = 'Session Already Used';
+          msg = 'This QR code has already been scanned. Each QR code is single-use. Please re-scan the physical QR code.';
+        } else if (errCode == 'TOKEN_EXPIRED_OR_INVALID') {
+          title = 'QR Code Expired';
+          msg = 'This QR code has expired (valid 15 minutes). Please re-scan the QR code at the information point.';
+        } else if (errCode == 'OUTSIDE_PROPERTY') {
+          title = '📍 Not Inside Hotel';
+          msg = 'This service is only available to guests inside ${zone.isEmpty ? 'the hotel' : zone}. Please scan the QR code from within the property.';
+        } else if (errCode == 'LOCATION_REQUIRED') {
+          title = '📍 Location Required';
+          msg = 'Location access is required to use this service. Please enable location permissions and re-scan the QR code.';
         }
+        setState(() {
+          _loading = false;
+          _error = true;
+          _errorTitle = title;
+          _errorMsg = msg;
+        });
       }
     } catch (e) {
-      // If backend unreachable, create a local demo session
+      // Backend unreachable — demo mode
       _startDemoSession(zone);
     }
   }
 
-  Future<void> _verifyLocation(
-      String sessionToken, String zoneName, String zoneId) async {
+  /// Get GPS location. Returns a map with lat/lng, or blocked=true with title/message.
+  Future<Map<String, dynamic>> _getGpsLocation() async {
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
-        _goToChat(sessionToken, zoneName, zoneId, 'unavailable');
-        return;
+        return {
+          'blocked': true,
+          'title': '📍 Location Service Off',
+          'message':
+              'Please enable location services on your device and re-scan the QR code. '
+              'This service is only available to guests physically inside the hotel.',
+        };
       }
 
       LocationPermission permission = await Geolocator.checkPermission();
@@ -128,36 +157,25 @@ class _LandingScreenState extends State<LandingScreen>
 
       if (permission == LocationPermission.deniedForever ||
           permission == LocationPermission.denied) {
-        // Send null location to backend
-        await http.post(
-          Uri.parse('$_backendUrl/guest/verify-location'),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({'sessionToken': sessionToken, 'lat': null, 'lng': null}),
-        );
-        _goToChat(sessionToken, zoneName, zoneId, 'denied');
-        return;
+        return {
+          'blocked': true,
+          'title': '📍 Location Permission Required',
+          'message':
+              'CrisisSync needs your location to confirm you are inside the hotel. '
+              'Please grant location permission in your browser/device settings and re-scan.',
+        };
       }
 
+      setState(() => _status = '📡 Getting GPS coordinates...');
       final pos = await Geolocator.getCurrentPosition(
           locationSettings: const LocationSettings(
-              accuracy: LocationAccuracy.high, timeLimit: Duration(seconds: 8)));
+              accuracy: LocationAccuracy.high,
+              timeLimit: Duration(seconds: 10)));
 
-      final res = await http.post(
-        Uri.parse('$_backendUrl/guest/verify-location'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'sessionToken': sessionToken,
-          'lat': pos.latitude,
-          'lng': pos.longitude,
-        }),
-      );
-
-      final data = jsonDecode(res.body) as Map<String, dynamic>;
-      final verified = data['verified'] == true;
-      _goToChat(sessionToken, zoneName, zoneId,
-          verified ? 'verified' : 'outside');
+      return {'blocked': false, 'lat': pos.latitude, 'lng': pos.longitude};
     } catch (_) {
-      _goToChat(sessionToken, zoneName, zoneId, 'unavailable');
+      // GPS timed out or unavailable — let backend decide
+      return {'blocked': false, 'lat': null, 'lng': null};
     }
   }
 
