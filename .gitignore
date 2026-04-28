@@ -1,36 +1,41 @@
-# ─── Backend ──────────────────────────────────────────────────────
-backend/node_modules/
-backend/dist/
-backend/.env
-backend/package-lock.json
-backend/src/scripts/
-
-# ─── Flutter ──────────────────────────────────────────────────────
-staff_app_flutter/.dart_tool/
-staff_app_flutter/.flutter-plugins
-staff_app_flutter/.flutter-plugins-dependencies
-staff_app_flutter/build/
-staff_app_flutter/.packages
-staff_app_flutter/pubspec.lock
-
-# Platform folders (web-only demo)
-staff_app_flutter/android/
-staff_app_flutter/ios/
-staff_app_flutter/linux/
-staff_app_flutter/macos/
-staff_app_flutter/windows/
-staff_app_flutter/test/
-
-# ─── Symlinks / old folders ────────────────────────────────────────
-flutter_sdk
-guest-web
-staff-app
-
-# ─── macOS ────────────────────────────────────────────────────────
+# ── System ─────────────────────────────────────────────────────────
 .DS_Store
-**/.DS_Store
+*.swp
+*.swo
+Thumbs.db
 
-# ─── IDE ──────────────────────────────────────────────────────────
+# ── Environment / Secrets ──────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+*.env
+
+# ── Flutter / Dart ─────────────────────────────────────────────────
+**/build/
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/.packages
+**/pubspec.lock
+**/*.g.dart
+**/*.freezed.dart
+
+# ── Dart backend ───────────────────────────────────────────────────
+backend_dart/.dart_tool/
+backend_dart/build/
+
+# ── Flutter SDK (bundled, don't push) ─────────────────────────────
+flutter_sdk/
+
+# ── Node.js (legacy — removed) ────────────────────────────────────
+node_modules/
+dist/
+*.js.map
+
+# ── Web build outputs ─────────────────────────────────────────────
+**/web/build/
+
+# ── IDE ───────────────────────────────────────────────────────────
 .vscode/
 .idea/
-*.swp
+*.iml

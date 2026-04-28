@@ -1,6 +1,7 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
-import 'package:socket_io_client/socket_io_client.dart' as IO;
+import 'package:web_socket_channel/web_socket_channel.dart';
 import '../theme/app_theme.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -11,7 +12,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
-  bool _isOnline = true;
+  bool _isOnline = false;
   bool _hasActiveIncident = true;
 
   String _incidentTitle = 'Smoke Detected — Kitchen Alpha';
@@ -23,14 +24,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Map<String, dynamic>? _latestNews;
 
   // Escalation state
-  String _escalationLevel = ''; // 'zone_only' | 'all_staff' | 'first_responders'
+  String _escalationLevel = '';
   int _confidencePct = 0;
   List<dynamic> _respondersDispatched = [];
   String _responderEta = '';
   bool _firstRespondersAlerted = false;
 
   late AnimationController _pulseController;
-  late IO.Socket socket;
+  WebSocketChannel? _channel;
+
+  static const String _wsUrl = 'ws://localhost:8080/ws';
 
   @override
   void initState() {
@@ -39,70 +42,93 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       vsync: this,
       duration: const Duration(seconds: 2),
     )..repeat(reverse: true);
-    _initSocket();
+    _connectWs();
   }
 
-  void _initSocket() {
-    socket = IO.io('http://localhost:3000/chat', <String, dynamic>{
-      'transports': ['websocket'],
-      'autoConnect': false,
-      'auth': {'token': 'mock_123'},
-    });
-    socket.connect();
-    socket.onConnect((_) => debugPrint('Socket connected'));
-    socket.on('hardware_alert', (data) {
+  void _connectWs() {
+    try {
+      _channel = WebSocketChannel.connect(Uri.parse(_wsUrl));
       if (!mounted) return;
-      setState(() {
-        _hasActiveIncident = true;
-        _incidentTitle = data['title'] ?? 'HARDWARE ALERT';
-        _incidentZone = data['zone'] ?? 'Unknown Zone';
-        _incidentDesc = data['description'] ?? 'Automated hardware trigger.';
-        _incidentSeverity = data['severity'] == 'warning' ? 'WARNING' : 'CRITICAL';
-        _confidencePct = data['confidence'] ?? 0;
-        _escalationLevel = 'all_staff';
-        _firstRespondersAlerted = false;
-        if (data['actionPlan'] != null) _actionPlan = data['actionPlan'];
-      });
-    });
+      setState(() => _isOnline = true);
 
-    // Zone-only BLE alert (low confidence — nearby staff only)
-    socket.on('zone_alert', (data) {
-      if (!mounted) return;
-      setState(() {
-        _hasActiveIncident = true;
-        _incidentTitle = data['zone'] != null ? '⚡ Zone Alert — ${data['zone']}' : 'ZONE ALERT';
-        _incidentZone = data['zone'] ?? 'Unknown Zone';
-        _incidentDesc = data['description'] ?? 'Sensor trigger in your BLE zone.';
-        _incidentSeverity = 'WARNING';
-        _confidencePct = ((data['confidence'] ?? 0.4) * 100).round();
-        _escalationLevel = 'zone_only';
-        _firstRespondersAlerted = false;
-        if (data['actionPlan'] != null) _actionPlan = data['actionPlan'];
-      });
-    });
+      _channel!.stream.listen(
+        (raw) {
+          if (!mounted) return;
+          final data = jsonDecode(raw as String) as Map<String, dynamic>;
+          final event = data['event'] as String? ?? '';
+          _handleEvent(event, data);
+        },
+        onError: (_) {
+          if (mounted) setState(() => _isOnline = false);
+        },
+        onDone: () {
+          if (mounted) setState(() => _isOnline = false);
+          // Auto-reconnect after 3s
+          Future.delayed(const Duration(seconds: 3), () {
+            if (mounted) _connectWs();
+          });
+        },
+      );
+    } catch (_) {
+      if (mounted) setState(() => _isOnline = false);
+    }
+  }
 
-    // First responders dispatched (high confidence)
-    socket.on('responders_dispatched', (data) {
-      if (!mounted) return;
-      setState(() {
-        _firstRespondersAlerted = true;
-        _escalationLevel = 'first_responders';
-        _respondersDispatched = data['responderTypes'] ?? [];
-        _responderEta = data['eta'] ?? '';
-      });
-    });
+  void _handleEvent(String event, Map<String, dynamic> data) {
+    setState(() {
+      switch (event) {
+        case 'hardware_alert':
+          _hasActiveIncident = true;
+          _incidentTitle = data['title'] ?? 'HARDWARE ALERT';
+          _incidentZone = data['zone'] ?? 'Unknown Zone';
+          _incidentDesc =
+              data['description'] ?? 'Automated hardware trigger.';
+          _incidentSeverity =
+              data['severity'] == 'WARNING' ? 'WARNING' : 'CRITICAL';
+          _confidencePct = (data['confidence'] as num?)?.toInt() ?? 0;
+          _escalationLevel = 'all_staff';
+          _firstRespondersAlerted = false;
+          if (data['actionPlan'] != null) {
+            _actionPlan = data['actionPlan'] as List;
+          }
+          break;
 
-    socket.on('news_update', (data) {
-      if (!mounted) return;
-      setState(() => _latestNews = data);
+        case 'zone_alert':
+          _hasActiveIncident = true;
+          _incidentTitle = data['zone'] != null
+              ? '⚡ Zone Alert — ${data['zone']}'
+              : 'ZONE ALERT';
+          _incidentZone = data['zone'] ?? 'Unknown Zone';
+          _incidentDesc =
+              data['description'] ?? 'Sensor trigger in your BLE zone.';
+          _incidentSeverity = 'WARNING';
+          _confidencePct =
+              ((data['confidence'] as num? ?? 0.4) * 100).round();
+          _escalationLevel = 'zone_only';
+          _firstRespondersAlerted = false;
+          if (data['actionPlan'] != null) {
+            _actionPlan = data['actionPlan'] as List;
+          }
+          break;
+
+        case 'responders_dispatched':
+          _firstRespondersAlerted = true;
+          _escalationLevel = 'first_responders';
+          _respondersDispatched = data['responderTypes'] ?? [];
+          _responderEta = data['eta'] ?? '';
+          break;
+
+        case 'news_update':
+          _latestNews = data;
+          break;
+      }
     });
   }
 
   @override
   void dispose() {
     _pulseController.dispose();
-    socket.disconnect();
-    socket.dispose();
+    _channel?.sink.close();
     super.dispose();
   }
 
@@ -115,16 +141,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Live Status Bar
               _buildStatusBar(),
-              // News Banner
               if (_latestNews != null) _buildNewsBanner(),
               Padding(
                 padding: const EdgeInsets.all(AppTheme.spacingMd),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Title
                     const Text('Command Center',
                         style: TextStyle(
                             fontSize: 28,
@@ -132,29 +155,23 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                             color: AppTheme.textPrimary,
                             letterSpacing: -0.5)),
                     const SizedBox(height: 4),
-                    Text('Rapid Crisis Response • ${DateTime.now().hour}:${DateTime.now().minute.toString().padLeft(2, '0')}',
+                    Text(
+                        'Rapid Crisis Response • ${DateTime.now().hour}:${DateTime.now().minute.toString().padLeft(2, '0')}',
                         style: const TextStyle(
                             fontSize: 14, color: AppTheme.textSecondary)),
                     const SizedBox(height: 20),
-                    // Stats Row
                     _buildStatsRow(),
                     const SizedBox(height: 16),
-                    // Escalation level badge
                     if (_escalationLevel.isNotEmpty) _buildEscalationBadge(),
                     if (_escalationLevel.isNotEmpty) const SizedBox(height: 12),
-                    // First responders banner
                     if (_firstRespondersAlerted) _buildRespondersBanner(),
                     if (_firstRespondersAlerted) const SizedBox(height: 12),
-                    // Active Incident
                     if (_hasActiveIncident) _buildIncidentCard(),
                     const SizedBox(height: 16),
-                    // AI Status
                     _buildAiCard(),
                     const SizedBox(height: 16),
-                    // Quick Actions
                     _buildQuickActions(),
                   ],
-
                 ),
               ),
             ],
@@ -169,13 +186,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
       decoration: BoxDecoration(
         color: _isOnline
-            ? AppTheme.successGreen.withOpacity(0.1)
-            : AppTheme.warningAmber.withOpacity(0.1),
+            ? AppTheme.successGreen.withValues(alpha: 0.1)
+            : AppTheme.warningAmber.withValues(alpha: 0.1),
         border: Border(
           bottom: BorderSide(
               color: _isOnline
-                  ? AppTheme.successGreen.withOpacity(0.3)
-                  : AppTheme.warningAmber.withOpacity(0.3),
+                  ? AppTheme.successGreen.withValues(alpha: 0.3)
+                  : AppTheme.warningAmber.withValues(alpha: 0.3),
               width: 1),
         ),
       ),
@@ -189,11 +206,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               height: 8,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: _isOnline ? AppTheme.successGreen : AppTheme.warningAmber,
+                color:
+                    _isOnline ? AppTheme.successGreen : AppTheme.warningAmber,
                 boxShadow: [
                   BoxShadow(
-                    color: (_isOnline ? AppTheme.successGreen : AppTheme.warningAmber)
-                        .withOpacity(_pulseController.value * 0.6),
+                    color: (_isOnline
+                            ? AppTheme.successGreen
+                            : AppTheme.warningAmber)
+                        .withValues(alpha: _pulseController.value * 0.6),
                     blurRadius: 8,
                     spreadRadius: 2,
                   ),
@@ -203,9 +223,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           ),
           const SizedBox(width: 10),
           Text(
-            _isOnline ? 'SYSTEM LIVE • ALL SENSORS ONLINE' : 'LIMITED CONNECTIVITY',
+            _isOnline
+                ? 'SYSTEM LIVE • DART BACKEND ONLINE'
+                : 'CONNECTING TO SERVER...',
             style: TextStyle(
-              color: _isOnline ? AppTheme.successGreen : AppTheme.warningAmber,
+              color:
+                  _isOnline ? AppTheme.successGreen : AppTheme.warningAmber,
               fontWeight: FontWeight.bold,
               fontSize: 11,
               letterSpacing: 1.5,
@@ -263,13 +286,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         color: isEmergency
-            ? AppTheme.criticalRed.withOpacity(0.15)
-            : AppTheme.accentCyan.withOpacity(0.1),
+            ? AppTheme.criticalRed.withValues(alpha: 0.15)
+            : AppTheme.accentCyan.withValues(alpha: 0.1),
         border: Border(
           bottom: BorderSide(
             color: isEmergency
-                ? AppTheme.criticalRed.withOpacity(0.3)
-                : AppTheme.accentCyan.withOpacity(0.3),
+                ? AppTheme.criticalRed.withValues(alpha: 0.3)
+                : AppTheme.accentCyan.withValues(alpha: 0.3),
           ),
         ),
       ),
@@ -288,7 +311,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 Text(
                   isEmergency ? 'EMERGENCY INTEL' : 'DAILY BRIEFING',
                   style: TextStyle(
-                    color: isEmergency ? AppTheme.criticalRed : AppTheme.accentCyan,
+                    color: isEmergency
+                        ? AppTheme.criticalRed
+                        : AppTheme.accentCyan,
                     fontWeight: FontWeight.bold,
                     fontSize: 10,
                     letterSpacing: 1.5,
@@ -319,10 +344,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       decoration: BoxDecoration(
         gradient: AppTheme.criticalGradient,
         borderRadius: BorderRadius.circular(AppTheme.radiusCard),
-        border: Border.all(color: AppTheme.criticalRed.withOpacity(0.4)),
+        border: Border.all(color: AppTheme.criticalRed.withValues(alpha: 0.4)),
         boxShadow: [
           BoxShadow(
-            color: AppTheme.criticalRed.withOpacity(0.2),
+            color: AppTheme.criticalRed.withValues(alpha: 0.2),
             blurRadius: 20,
             offset: const Offset(0, 8),
           ),
@@ -346,7 +371,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       boxShadow: [
                         BoxShadow(
                           color: AppTheme.criticalRed
-                              .withOpacity(_pulseController.value * 0.8),
+                              .withValues(alpha: _pulseController.value * 0.8),
                           blurRadius: 10,
                           spreadRadius: 2,
                         ),
@@ -363,9 +388,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         letterSpacing: 2)),
               ]),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: AppTheme.white.withOpacity(0.15),
+                  color: AppTheme.white.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(AppTheme.radiusPill),
                 ),
                 child: const Text('LIVE',
@@ -387,7 +413,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
             decoration: BoxDecoration(
-              color: AppTheme.white.withOpacity(0.1),
+              color: AppTheme.white.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(AppTheme.radiusPill),
             ),
             child: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -405,24 +431,26 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           Text(_incidentDesc,
               style: TextStyle(
                   fontSize: 13,
-                  color: AppTheme.white.withOpacity(0.85),
+                  color: AppTheme.white.withValues(alpha: 0.85),
                   height: 1.5)),
           if (_actionPlan.isNotEmpty) ...[
             const SizedBox(height: 14),
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: AppTheme.white.withOpacity(0.08),
+                color: AppTheme.white.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-                border: Border.all(color: AppTheme.white.withOpacity(0.15)),
+                border: Border.all(
+                    color: AppTheme.white.withValues(alpha: 0.15)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(children: const [
-                    Icon(LucideIcons.sparkles, color: AppTheme.accentCyan, size: 14),
+                  const Row(children: [
+                    Icon(LucideIcons.sparkles,
+                        color: AppTheme.accentCyan, size: 14),
                     SizedBox(width: 6),
-                    Text('GEMMA AI PROTOCOL',
+                    Text('GEMINI AI PROTOCOL',
                         style: TextStyle(
                             fontWeight: FontWeight.bold,
                             color: AppTheme.accentCyan,
@@ -435,7 +463,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         child: Text('${e.key + 1}. ${e.value}',
                             style: TextStyle(
                                 fontSize: 12,
-                                color: AppTheme.white.withOpacity(0.9))),
+                                color: AppTheme.white.withValues(alpha: 0.9))),
                       )),
                 ],
               ),
@@ -465,12 +493,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             const SizedBox(width: 10),
             Container(
               decoration: BoxDecoration(
-                color: AppTheme.white.withOpacity(0.15),
+                color: AppTheme.white.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(AppTheme.radiusButton),
               ),
               child: IconButton(
-                onPressed: () {},
-                icon: const Icon(LucideIcons.x, color: AppTheme.white, size: 20),
+                onPressed: () => setState(() => _hasActiveIncident = false),
+                icon: const Icon(LucideIcons.x,
+                    color: AppTheme.white, size: 20),
               ),
             ),
           ]),
@@ -485,7 +514,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       decoration: BoxDecoration(
         color: AppTheme.bgCard,
         borderRadius: BorderRadius.circular(AppTheme.radiusCard),
-        border: Border.all(color: AppTheme.accentCyan.withOpacity(0.2)),
+        border: Border.all(
+            color: AppTheme.accentCyan.withValues(alpha: 0.2)),
       ),
       child: Row(
         children: [
@@ -496,21 +526,22 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               color: AppTheme.accentCyanBg,
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Icon(LucideIcons.brain, color: AppTheme.accentCyan, size: 24),
+            child: const Icon(LucideIcons.brain,
+                color: AppTheme.accentCyan, size: 24),
           ),
           const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Gemma AI • Active',
+                const Text('Gemini AI • Active',
                     style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.bold,
                         color: AppTheme.accentCyan)),
                 const SizedBox(height: 2),
                 Text('Monitoring all zones. Threat level: LOW',
-                    style: TextStyle(
+                    style: const TextStyle(
                         fontSize: 13, color: AppTheme.textSecondary)),
               ],
             ),
@@ -523,7 +554,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               color: AppTheme.successGreen,
               boxShadow: [
                 BoxShadow(
-                    color: AppTheme.successGreen.withOpacity(0.5),
+                    color: AppTheme.successGreen.withValues(alpha: 0.5),
                     blurRadius: 6),
               ],
             ),
@@ -547,9 +578,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         Row(children: [
           _buildActionTile(LucideIcons.radio, 'Broadcast', AppTheme.accentCyan),
           const SizedBox(width: 10),
-          _buildActionTile(LucideIcons.users, 'Deploy Team', AppTheme.successGreen),
+          _buildActionTile(
+              LucideIcons.users, 'Deploy Team', AppTheme.successGreen),
           const SizedBox(width: 10),
-          _buildActionTile(LucideIcons.fileText, 'Reports', AppTheme.warningAmber),
+          _buildActionTile(
+              LucideIcons.fileText, 'Reports', AppTheme.warningAmber),
         ]),
       ],
     );
@@ -577,7 +610,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  // ── Escalation Level Badge ─────────────────────────────────────
   Widget _buildEscalationBadge() {
     Color color;
     String label;
@@ -604,15 +636,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-        border: Border.all(color: color.withOpacity(0.35)),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
       ),
       child: Row(children: [
         Icon(icon, color: color, size: 16),
         const SizedBox(width: 10),
         Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(label,
                 style: TextStyle(
                     color: color,
@@ -629,7 +662,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  // ── First Responders Dispatched Banner ─────────────────────────
   Widget _buildRespondersBanner() {
     return Container(
       width: double.infinity,
@@ -637,9 +669,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       decoration: BoxDecoration(
         gradient: AppTheme.criticalGradient,
         borderRadius: BorderRadius.circular(AppTheme.radiusCard),
-        border: Border.all(color: AppTheme.criticalRed.withOpacity(0.4)),
+        border:
+            Border.all(color: AppTheme.criticalRed.withValues(alpha: 0.4)),
       ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      child:
+          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
           const Icon(LucideIcons.alertOctagon,
               color: AppTheme.white, size: 18),
@@ -653,9 +687,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           const Spacer(),
           if (_responderEta.isNotEmpty)
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
-                color: AppTheme.white.withOpacity(0.2),
+                color: AppTheme.white.withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(AppTheme.radiusPill),
               ),
               child: Text('ETA $_responderEta',
@@ -670,22 +705,25 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           Wrap(
             spacing: 8,
             runSpacing: 6,
-            children: _respondersDispatched.map<Widget>((r) => Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: AppTheme.white.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(AppTheme.radiusPill),
-              ),
-              child: Text(r.toString(),
-                  style: const TextStyle(
-                      color: AppTheme.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600)),
-            )).toList(),
+            children: _respondersDispatched
+                .map<Widget>((r) => Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: AppTheme.white.withValues(alpha: 0.15),
+                        borderRadius:
+                            BorderRadius.circular(AppTheme.radiusPill),
+                      ),
+                      child: Text(r.toString(),
+                          style: const TextStyle(
+                              color: AppTheme.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600)),
+                    ))
+                .toList(),
           ),
         ],
       ]),
     );
   }
 }
-

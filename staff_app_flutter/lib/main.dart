@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'navigation/bottom_nav.dart';
+import 'screens/auth/splash_screen.dart';
 import 'theme/app_theme.dart';
 
 void main() {
@@ -33,8 +33,9 @@ class CrisisSyncStaffApp extends StatelessWidget {
         fontFamily: 'Inter',
         useMaterial3: true,
       ),
-      home: const BottomNavScaffold(),
+      home: const SplashScreen(),
       debugShowCheckedModeBanner: false,
     );
   }
 }
+
