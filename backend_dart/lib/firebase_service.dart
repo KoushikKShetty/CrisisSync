@@ -47,7 +47,7 @@ Future<String> _getAccessToken() async {
     'iat': iat,
     'exp': exp,
     'scope':
-        'https://www.googleapis.com/auth/firebase https://www.googleapis.com/auth/userinfo.email',
+        'https://www.googleapis.com/auth/firebase https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email',
   });
 
   final token = jwt.sign(
@@ -73,6 +73,9 @@ Future<String> _getAccessToken() async {
   _tokenExpiry = now.add(const Duration(minutes: 55));
   return _cachedToken!;
 }
+
+/// Expose the service account token for other Google Cloud APIs (e.g. Vertex AI)
+Future<String> getGoogleAccessToken() => _getAccessToken();
 
 // ── RTDB Read ──────────────────────────────────────────────────────
 Future<dynamic> dbGet(String path) async {

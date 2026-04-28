@@ -7,7 +7,7 @@ class AuthGridPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = const Color(0xFF22D3EE).withOpacity(0.03)
+      ..color = const Color(0xFF22D3EE).withValues(alpha: 0.03)
       ..strokeWidth = 1;
     const spacing = 40.0;
     for (double x = 0; x < size.width; x += spacing) {
@@ -86,7 +86,7 @@ class AuthTextField extends StatelessWidget {
           decoration: InputDecoration(
             hintText: hint,
             hintStyle: const TextStyle(color: AppTheme.textMuted, fontSize: 14),
-            prefixIcon: Icon(icon, color: iconColor.withOpacity(0.7), size: 20),
+            prefixIcon: Icon(icon, color: iconColor.withValues(alpha: 0.7), size: 20),
             suffixIcon: suffix,
             filled: true,
             fillColor: AppTheme.bgCard,
@@ -139,7 +139,7 @@ class AuthPrimaryButton extends StatelessWidget {
         style: ElevatedButton.styleFrom(
           backgroundColor: color,
           foregroundColor: Colors.white,
-          disabledBackgroundColor: color.withOpacity(0.4),
+          disabledBackgroundColor: color.withValues(alpha: 0.4),
           shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(14)),
           elevation: 0,
@@ -178,7 +178,7 @@ class ErrorBanner extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppTheme.criticalRedBg,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppTheme.criticalRed.withOpacity(0.4)),
+        border: Border.all(color: AppTheme.criticalRed.withValues(alpha: 0.4)),
       ),
       child: Row(
         children: [

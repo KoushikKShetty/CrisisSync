@@ -153,9 +153,9 @@ class _OrgAuthScreenState extends State<OrgAuthScreen>
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                         decoration: BoxDecoration(
-                          color: AppTheme.accentCyan.withOpacity(0.12),
+                          color: AppTheme.accentCyan.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: AppTheme.accentCyan.withOpacity(0.3)),
+                          border: Border.all(color: AppTheme.accentCyan.withValues(alpha: 0.3)),
                         ),
                         child: const Text('ADMIN',
                             style: TextStyle(
@@ -293,14 +293,14 @@ class _OrgAuthScreenState extends State<OrgAuthScreen>
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: AppTheme.accentCyan.withOpacity(0.06),
+              color: AppTheme.accentCyan.withValues(alpha: 0.06),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppTheme.accentCyan.withOpacity(0.2)),
+              border: Border.all(color: AppTheme.accentCyan.withValues(alpha: 0.2)),
             ),
             child: Row(
               children: [
                 Icon(Icons.info_outline_rounded,
-                    color: AppTheme.accentCyan.withOpacity(0.7), size: 18),
+                    color: AppTheme.accentCyan.withValues(alpha: 0.7), size: 18),
                 const SizedBox(width: 10),
                 const Expanded(
                   child: Text(
@@ -397,7 +397,7 @@ class _OrgCodeSuccessScreen extends StatelessWidget {
                   shape: BoxShape.circle,
                   color: AppTheme.successGreenBg,
                   border: Border.all(
-                      color: AppTheme.successGreen.withOpacity(0.4), width: 2),
+                      color: AppTheme.successGreen.withValues(alpha: 0.4), width: 2),
                 ),
                 child: const Icon(Icons.check_rounded,
                     color: AppTheme.successGreen, size: 48),
@@ -424,10 +424,10 @@ class _OrgCodeSuccessScreen extends StatelessWidget {
                   borderRadius: BorderRadius.circular(20),
                   color: AppTheme.bgCard,
                   border: Border.all(
-                      color: AppTheme.accentCyan.withOpacity(0.4), width: 2),
+                      color: AppTheme.accentCyan.withValues(alpha: 0.4), width: 2),
                   boxShadow: [
                     BoxShadow(
-                      color: AppTheme.accentCyan.withOpacity(0.1),
+                      color: AppTheme.accentCyan.withValues(alpha: 0.1),
                       blurRadius: 30,
                       spreadRadius: 2,
                     ),
@@ -469,10 +469,10 @@ class _OrgCodeSuccessScreen extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 16, vertical: 8),
                         decoration: BoxDecoration(
-                          color: AppTheme.accentCyan.withOpacity(0.12),
+                          color: AppTheme.accentCyan.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
-                              color: AppTheme.accentCyan.withOpacity(0.3)),
+                              color: AppTheme.accentCyan.withValues(alpha: 0.3)),
                         ),
                         child: const Row(
                           mainAxisSize: MainAxisSize.min,
@@ -499,7 +499,7 @@ class _OrgCodeSuccessScreen extends StatelessWidget {
                   color: AppTheme.warningAmberBg,
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                      color: AppTheme.warningAmber.withOpacity(0.3)),
+                      color: AppTheme.warningAmber.withValues(alpha: 0.3)),
                 ),
                 child: const Row(
                   children: [

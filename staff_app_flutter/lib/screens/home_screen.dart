@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../theme/app_theme.dart';
@@ -21,6 +22,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       'Elevated particulate levels detected by sensor SMK-402. Automated ventilation triggered. Awaiting visual confirmation from nearest responder.';
   String _incidentSeverity = 'CRITICAL';
   List<dynamic> _actionPlan = [];
+  String _incidentId = '';
+  bool _respondingNow = false;
   Map<String, dynamic>? _latestNews;
 
   // Escalation state
@@ -79,6 +82,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       switch (event) {
         case 'hardware_alert':
           _hasActiveIncident = true;
+          _respondingNow = false;
+          _incidentId = data['incidentId'] as String? ?? '';
           _incidentTitle = data['title'] ?? 'HARDWARE ALERT';
           _incidentZone = data['zone'] ?? 'Unknown Zone';
           _incidentDesc =
@@ -95,6 +100,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
         case 'zone_alert':
           _hasActiveIncident = true;
+          _respondingNow = false;
+          _incidentId = data['incidentId'] as String? ?? '';
           _incidentTitle = data['zone'] != null
               ? '⚡ Zone Alert — ${data['zone']}'
               : 'ZONE ALERT';
@@ -123,6 +130,35 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           break;
       }
     });
+  }
+
+  Future<void> _acceptIncident() async {
+    if (_incidentId.isEmpty || _respondingNow) return;
+    setState(() => _respondingNow = true);
+    try {
+      await http.post(
+        Uri.parse('http://localhost:8080/incidents/$_incidentId/accept'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'userId': 'alex-rivera'}),
+      );
+    } catch (_) {
+      // Offline — still show local confirmation
+    }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Row(children: [
+          Icon(Icons.check_circle, color: Colors.white, size: 18),
+          SizedBox(width: 10),
+          Text('Response accepted — you are en route',
+              style: TextStyle(fontWeight: FontWeight.bold)),
+        ]),
+        backgroundColor: AppTheme.successGreen,
+        duration: const Duration(seconds: 3),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
   }
 
   @override
@@ -473,21 +509,38 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           Row(children: [
             Expanded(
               child: ElevatedButton(
-                onPressed: () {},
+                onPressed: _respondingNow ? null : _acceptIncident,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.white,
+                  backgroundColor:
+                      _respondingNow ? AppTheme.successGreen : AppTheme.white,
+                  disabledBackgroundColor: AppTheme.successGreen,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(
                       borderRadius:
                           BorderRadius.circular(AppTheme.radiusButton)),
                   elevation: 0,
                 ),
-                child: const Text('RESPOND NOW',
-                    style: TextStyle(
-                        color: Color(0xFF991B1B),
-                        fontWeight: FontWeight.w900,
-                        fontSize: 14,
-                        letterSpacing: 1)),
+                child: _respondingNow
+                    ? const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.check_circle,
+                              color: AppTheme.white, size: 16),
+                          SizedBox(width: 6),
+                          Text('RESPONDING',
+                              style: TextStyle(
+                                  color: AppTheme.white,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 14,
+                                  letterSpacing: 1)),
+                        ],
+                      )
+                    : const Text('RESPOND NOW',
+                        style: TextStyle(
+                            color: Color(0xFF991B1B),
+                            fontWeight: FontWeight.w900,
+                            fontSize: 14,
+                            letterSpacing: 1)),
               ),
             ),
             const SizedBox(width: 10),
@@ -530,18 +583,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 color: AppTheme.accentCyan, size: 24),
           ),
           const SizedBox(width: 16),
-          Expanded(
+          const Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Gemini AI • Active',
+                Text('Gemini AI • Active',
                     style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.bold,
                         color: AppTheme.accentCyan)),
-                const SizedBox(height: 2),
+                SizedBox(height: 2),
                 Text('Monitoring all zones. Threat level: LOW',
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontSize: 13, color: AppTheme.textSecondary)),
               ],
             ),

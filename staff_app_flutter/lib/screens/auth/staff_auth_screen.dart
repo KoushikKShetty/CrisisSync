@@ -182,10 +182,10 @@ class _StaffAuthScreenState extends State<StaffAuthScreen>
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                         decoration: BoxDecoration(
-                          color: AppTheme.successGreen.withOpacity(0.12),
+                          color: AppTheme.successGreen.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
-                              color: AppTheme.successGreen.withOpacity(0.3)),
+                              color: AppTheme.successGreen.withValues(alpha: 0.3)),
                         ),
                         child: const Text('STAFF',
                             style: TextStyle(
@@ -287,7 +287,7 @@ class _StaffAuthScreenState extends State<StaffAuthScreen>
                 borderRadius: BorderRadius.circular(14),
                 borderSide: BorderSide(
                   color: _foundOrg != null
-                      ? AppTheme.successGreen.withOpacity(0.5)
+                      ? AppTheme.successGreen.withValues(alpha: 0.5)
                       : AppTheme.borderDefault,
                 ),
               ),
@@ -429,7 +429,7 @@ class _OrgInfoCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppTheme.successGreenBg,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.successGreen.withOpacity(0.4)),
+        border: Border.all(color: AppTheme.successGreen.withValues(alpha: 0.4)),
       ),
       child: Row(
         children: [
@@ -462,7 +462,7 @@ class _OrgInfoCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: AppTheme.successGreen.withOpacity(0.15),
+              color: AppTheme.successGreen.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(6),
             ),
             child: const Text('VERIFIED',

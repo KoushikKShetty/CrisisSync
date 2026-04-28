@@ -1,9 +1,10 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
+import 'package:http/http.dart' as http;
 import '../theme/app_theme.dart';
 import '../screens/home_screen.dart';
 import '../screens/map_screen.dart';
-import '../screens/chat_screen.dart';
 import '../screens/duty_screen.dart';
 import '../screens/alerts_screen.dart';
 
@@ -22,8 +23,8 @@ class _BottomNavScaffoldState extends State<BottomNavScaffold>
   final List<Widget> _screens = [
     const HomeScreen(),
     const MapScreen(),
-    const HomeScreen(), // SOS placeholder
-    const ChatScreen(),
+    const HomeScreen(), // SOS placeholder — index 2 never rendered, SOS sheet opens instead
+    const AlertsScreen(),
     const DutyScreen(),
   ];
 
@@ -70,7 +71,7 @@ class _BottomNavScaffoldState extends State<BottomNavScaffold>
               gradient: AppTheme.criticalGradient,
               boxShadow: [
                 BoxShadow(
-                  color: AppTheme.criticalRed.withOpacity(0.4),
+                  color: AppTheme.criticalRed.withValues(alpha: 0.4),
                   blurRadius: 30,
                   spreadRadius: 5,
                 ),
@@ -113,18 +114,39 @@ class _BottomNavScaffoldState extends State<BottomNavScaffold>
     );
   }
 
+  Future<void> _triggerSOSEvent(String type) async {
+    Navigator.pop(context);
+    final zoneMap = {'fire': 'kitchen-alpha', 'medical': 'lobby', 'security': 'lobby'};
+    final zoneNameMap = {'fire': 'Kitchen Alpha', 'medical': 'Lobby', 'security': 'Lobby'};
+    try {
+      await http.post(
+        Uri.parse('http://localhost:8080/mock/hardware-event'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'sensorId': 'STAFF-SOS-${DateTime.now().millisecondsSinceEpoch}',
+          'zone': zoneNameMap[type] ?? 'Unknown',
+          'zoneId': zoneMap[type] ?? 'lobby',
+          'type': type,
+          'description': 'Staff SOS triggered manually — $type emergency',
+          'confidence': 0.95,
+        }),
+      );
+    } catch (_) {}
+  }
+
   Widget _buildSOSOption(IconData icon, String label, Color color) {
+    final typeMap = {'Fire Emergency': 'fire', 'Medical Emergency': 'medical', 'Security Threat': 'security'};
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: () => Navigator.pop(context),
+        onTap: () => _triggerSOSEvent(typeMap[label] ?? 'security'),
         borderRadius: BorderRadius.circular(AppTheme.radiusButton),
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
           decoration: BoxDecoration(
-            color: color.withOpacity(0.12),
+            color: color.withValues(alpha: 0.12),
             borderRadius: BorderRadius.circular(AppTheme.radiusButton),
-            border: Border.all(color: color.withOpacity(0.3)),
+            border: Border.all(color: color.withValues(alpha: 0.3)),
           ),
           child: Row(
             children: [
@@ -157,7 +179,7 @@ class _BottomNavScaffoldState extends State<BottomNavScaffold>
           border: Border.all(color: AppTheme.bgPrimary, width: 4),
           boxShadow: [
             BoxShadow(
-              color: AppTheme.sosRed.withOpacity(0.5),
+              color: AppTheme.sosRed.withValues(alpha: 0.5),
               offset: const Offset(0, 4),
               blurRadius: 16,
               spreadRadius: 0,
@@ -199,7 +221,7 @@ class _BottomNavScaffoldState extends State<BottomNavScaffold>
             BottomNavigationBarItem(
                 icon: SizedBox.shrink(), label: 'SOS'),
             BottomNavigationBarItem(
-                icon: Icon(LucideIcons.messageCircle), label: 'Comms'),
+                icon: Icon(LucideIcons.bell), label: 'Alerts'),
             BottomNavigationBarItem(
                 icon: Icon(LucideIcons.shield), label: 'Status'),
           ],

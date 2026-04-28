@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
 import '../firebase_service.dart';
+import '../websocket_service.dart';
 
 Response _json(int status, dynamic body) => Response(
       status,
@@ -107,6 +108,37 @@ Router buildIncidentsRouter() {
     try {
       await dbUpdate('incidents/$id', {'escalated': true});
       return _json(200, {'message': 'Incident escalated'});
+    } catch (e) {
+      return _json(500, {'error': e.toString()});
+    }
+  });
+
+  // POST /incidents/staff-broadcast — staff-to-staff real-time message
+  // Body: { sender, avatar, message, incidentId? }
+  router.post('/staff-broadcast', (Request req) async {
+    try {
+      final body = await _parseBody(req);
+      final message = body['message'] as String? ?? '';
+      if (message.isEmpty) {
+        return _json(400, {'error': 'message is required'});
+      }
+      final sender = body['sender'] as String? ?? 'Staff';
+      final avatar = body['avatar'] as String? ?? '??';
+      final incidentId = body['incidentId'] as String? ?? '';
+
+      final payload = {
+        'sender': sender,
+        'avatar': avatar,
+        'message': message,
+        'incidentId': incidentId,
+        'time': DateTime.now().millisecondsSinceEpoch,
+      };
+      broadcast('staff_message', payload);
+
+      if (incidentId.isNotEmpty) {
+        await dbPush('incident_comms/$incidentId', payload);
+      }
+      return _json(200, {'ok': true});
     } catch (e) {
       return _json(500, {'error': e.toString()});
     }

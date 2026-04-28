@@ -143,7 +143,7 @@ class _DutyScreenState extends State<DutyScreen> {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
-                        color: AppTheme.accentCyan.withOpacity(0.12),
+                        color: AppTheme.accentCyan.withValues(alpha: 0.12),
                         borderRadius:
                             BorderRadius.circular(AppTheme.radiusPill),
                       ),
@@ -159,7 +159,7 @@ class _DutyScreenState extends State<DutyScreen> {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
-                        color: AppTheme.successGreen.withOpacity(0.12),
+                        color: AppTheme.successGreen.withValues(alpha: 0.12),
                         borderRadius:
                             BorderRadius.circular(AppTheme.radiusPill),
                       ),
@@ -185,12 +185,12 @@ class _DutyScreenState extends State<DutyScreen> {
       padding: const EdgeInsets.all(AppTheme.spacingMd),
       decoration: BoxDecoration(
         color: _isOnDuty
-            ? AppTheme.successGreen.withOpacity(0.08)
+            ? AppTheme.successGreen.withValues(alpha: 0.08)
             : AppTheme.bgCard,
         borderRadius: BorderRadius.circular(AppTheme.radiusCard),
         border: Border.all(
           color: _isOnDuty
-              ? AppTheme.successGreen.withOpacity(0.3)
+              ? AppTheme.successGreen.withValues(alpha: 0.3)
               : AppTheme.borderDefault,
         ),
       ),
@@ -225,8 +225,8 @@ class _DutyScreenState extends State<DutyScreen> {
           Switch(
             value: _isOnDuty,
             onChanged: (v) => setState(() => _isOnDuty = v),
-            activeColor: AppTheme.successGreen,
-            activeTrackColor: AppTheme.successGreen.withOpacity(0.3),
+            activeThumbColor: AppTheme.successGreen,
+            activeTrackColor: AppTheme.successGreen.withValues(alpha: 0.3),
             inactiveThumbColor: AppTheme.textMuted,
             inactiveTrackColor: AppTheme.bgSurface,
           ),
@@ -300,7 +300,7 @@ class _DutyScreenState extends State<DutyScreen> {
               height: 48,
               decoration: BoxDecoration(
                 color: isSelected
-                    ? AppTheme.accentCyan.withOpacity(0.15)
+                    ? AppTheme.accentCyan.withValues(alpha: 0.15)
                     : AppTheme.bgSurface,
                 borderRadius: BorderRadius.circular(12),
               ),
@@ -329,7 +329,7 @@ class _DutyScreenState extends State<DutyScreen> {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(
-                            color: AppTheme.accentCyan.withOpacity(0.2),
+                            color: AppTheme.accentCyan.withValues(alpha: 0.2),
                             borderRadius:
                                 BorderRadius.circular(AppTheme.radiusPill),
                           ),

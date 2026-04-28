@@ -23,8 +23,6 @@ class _RoleSelectScreenState extends State<RoleSelectScreen>
   late Animation<double> _card2Opacity;
   late Animation<Offset> _card2Slide;
 
-  int? _hoveredCard;
-
   @override
   void initState() {
     super.initState();
@@ -277,7 +275,6 @@ class _RoleCard extends StatefulWidget {
 
 class _RoleCardState extends State<_RoleCard>
     with SingleTickerProviderStateMixin {
-  bool _pressed = false;
   late AnimationController _scaleController;
   late Animation<double> _scale;
 
@@ -320,12 +317,12 @@ class _RoleCardState extends State<_RoleCard>
               colors: widget.gradientColors,
             ),
             border: Border.all(
-              color: widget.borderColor.withOpacity(0.4),
+              color: widget.borderColor.withValues(alpha: 0.4),
               width: 1.5,
             ),
             boxShadow: [
               BoxShadow(
-                color: widget.borderColor.withOpacity(0.12),
+                color: widget.borderColor.withValues(alpha: 0.12),
                 blurRadius: 20,
                 offset: const Offset(0, 4),
               ),
@@ -340,10 +337,10 @@ class _RoleCardState extends State<_RoleCard>
                     width: 52,
                     height: 52,
                     decoration: BoxDecoration(
-                      color: widget.iconColor.withOpacity(0.15),
+                      color: widget.iconColor.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(14),
                       border: Border.all(
-                          color: widget.iconColor.withOpacity(0.3), width: 1),
+                          color: widget.iconColor.withValues(alpha: 0.3), width: 1),
                     ),
                     child: Icon(widget.icon,
                         color: widget.iconColor, size: 28),
@@ -357,10 +354,10 @@ class _RoleCardState extends State<_RoleCard>
                           padding: const EdgeInsets.symmetric(
                               horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(
-                            color: widget.badgeColor.withOpacity(0.15),
+                            color: widget.badgeColor.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(6),
                             border: Border.all(
-                                color: widget.badgeColor.withOpacity(0.4)),
+                                color: widget.badgeColor.withValues(alpha: 0.4)),
                           ),
                           child: Text(
                             widget.badge,
@@ -385,7 +382,7 @@ class _RoleCardState extends State<_RoleCard>
                     ),
                   ),
                   Icon(Icons.arrow_forward_ios_rounded,
-                      color: widget.iconColor.withOpacity(0.7), size: 16),
+                      color: widget.iconColor.withValues(alpha: 0.7), size: 16),
                 ],
               ),
               const SizedBox(height: 16),
@@ -400,7 +397,7 @@ class _RoleCardState extends State<_RoleCard>
               const SizedBox(height: 16),
               Container(
                 height: 1,
-                color: widget.borderColor.withOpacity(0.15),
+                color: widget.borderColor.withValues(alpha: 0.15),
               ),
               const SizedBox(height: 14),
               ...widget.features.map(
@@ -434,7 +431,7 @@ class _SubtleGridPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = const Color(0xFF22D3EE).withOpacity(0.03)
+      ..color = const Color(0xFF22D3EE).withValues(alpha: 0.03)
       ..strokeWidth = 1;
     const spacing = 40.0;
     for (double x = 0; x < size.width; x += spacing) {

@@ -1,4 +1,3 @@
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
 import '../../services/auth_service.dart';
@@ -126,7 +125,7 @@ class _SplashScreenState extends State<SplashScreen>
                   shape: BoxShape.circle,
                   gradient: RadialGradient(
                     colors: [
-                      AppTheme.accentCyan.withOpacity(0.08),
+                      AppTheme.accentCyan.withValues(alpha: 0.08),
                       Colors.transparent,
                     ],
                   ),
@@ -175,7 +174,7 @@ class _SplashScreenState extends State<SplashScreen>
                       Text(
                         'Emergency Response Platform',
                         style: TextStyle(
-                          color: AppTheme.accentCyan.withOpacity(0.8),
+                          color: AppTheme.accentCyan.withValues(alpha: 0.8),
                           fontSize: 13,
                           fontWeight: FontWeight.w500,
                           letterSpacing: 2,
@@ -241,7 +240,7 @@ class _SplashScreenState extends State<SplashScreen>
           ),
           boxShadow: [
             BoxShadow(
-              color: AppTheme.accentCyan.withOpacity(0.4 * _pulseAnim.value),
+              color: AppTheme.accentCyan.withValues(alpha: 0.4 * _pulseAnim.value),
               blurRadius: 40,
               spreadRadius: 5,
             ),
@@ -259,7 +258,7 @@ class _GridPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = const Color(0xFF22D3EE).withOpacity(0.04)
+      ..color = const Color(0xFF22D3EE).withValues(alpha: 0.04)
       ..strokeWidth = 1;
 
     const spacing = 40.0;

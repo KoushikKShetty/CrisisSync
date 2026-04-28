@@ -292,23 +292,22 @@ Router buildGuestRouter() {
       });
     }
 
-    // Hotel center — Bangalore
-    const hotelLat = 12.9716;
-    const hotelLng = 77.5946;
-    const maxMeters = 200;
+    final hotelLat =
+        double.tryParse(env('HOTEL_LAT', '12.9716')) ?? 12.9716;
+    final hotelLng =
+        double.tryParse(env('HOTEL_LNG', '77.5946')) ?? 77.5946;
+    final maxMeters =
+        double.tryParse(env('HOTEL_RADIUS_M', '300')) ?? 300.0;
 
-    final dLat = (double.tryParse(lat.toString())! - hotelLat) *
-        (3.141592653589793 / 180);
-    final dLng = (double.tryParse(lng.toString())! - hotelLng) *
-        (3.141592653589793 / 180);
-    final a = sin(dLat / 2) * sin(dLat / 2) +
-        cos(hotelLat * 3.141592653589793 / 180) *
-            cos(double.tryParse(lat.toString())! *
-                3.141592653589793 /
-                180) *
-            sin(dLng / 2) *
-            sin(dLng / 2);
-    final distance = 6371000 * 2 * atan2(sqrt(a), sqrt(1 - a));
+    final guestLat = double.tryParse(lat.toString());
+    final guestLng = double.tryParse(lng.toString());
+
+    if (guestLat == null || guestLng == null) {
+      return _json(400, {'error': 'Invalid lat/lng values'});
+    }
+
+    final distance =
+        _haversineMeters(hotelLat, hotelLng, guestLat, guestLng);
 
     if (distance <= maxMeters) {
       return _json(200, {

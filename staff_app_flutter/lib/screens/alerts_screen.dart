@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:http/http.dart' as http;
+import 'package:web_socket_channel/web_socket_channel.dart';
 import '../theme/app_theme.dart';
 
 class AlertsScreen extends StatefulWidget {
@@ -11,17 +13,105 @@ class AlertsScreen extends StatefulWidget {
   State<AlertsScreen> createState() => _AlertsScreenState();
 }
 
-class _AlertsScreenState extends State<AlertsScreen> {
+class _AlertsScreenState extends State<AlertsScreen>
+    with SingleTickerProviderStateMixin {
   bool _loading = true;
+  bool _isLive = false;
   List<Map<String, dynamic>> _incidents = [];
 
+  WebSocketChannel? _channel;
+  late AnimationController _pulseController;
+
   static const String _baseUrl = 'http://localhost:8080';
+  static const String _wsUrl = 'ws://localhost:8080/ws';
 
   @override
   void initState() {
     super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    )..repeat(reverse: true);
     _loadIncidents();
+    _connectWs();
   }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    _channel?.sink.close();
+    super.dispose();
+  }
+
+  // ── WebSocket ────────────────────────────────────────────────────
+
+  void _connectWs() {
+    try {
+      _channel = WebSocketChannel.connect(Uri.parse(_wsUrl));
+      if (mounted) setState(() => _isLive = true);
+
+      _channel!.stream.listen(
+        (raw) {
+          if (!mounted) return;
+          try {
+            final data = jsonDecode(raw as String) as Map<String, dynamic>;
+            _handleWsEvent(data['event'] as String? ?? '', data);
+          } catch (_) {}
+        },
+        onError: (_) {
+          if (mounted) setState(() => _isLive = false);
+        },
+        onDone: () {
+          if (mounted) setState(() => _isLive = false);
+          Future.delayed(const Duration(seconds: 3), () {
+            if (mounted) _connectWs();
+          });
+        },
+        cancelOnError: true,
+      );
+    } catch (_) {
+      if (mounted) setState(() => _isLive = false);
+    }
+  }
+
+  void _handleWsEvent(String event, Map<String, dynamic> data) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+
+    if (event == 'hardware_alert' || event == 'zone_alert') {
+      final isCritical =
+          event == 'hardware_alert' && data['severity'] != 'WARNING';
+      final incident = <String, dynamic>{
+        'id': 'LIVE-$now',
+        'title': data['title'] as String? ??
+            (event == 'zone_alert'
+                ? '⚡ Zone Alert — ${data['zone']}'
+                : '🚨 ${data['zone'] ?? 'ALERT'}'),
+        'description': data['description'] as String? ?? '',
+        'zoneId': data['zone'] as String? ?? '',
+        'severity': isCritical ? 'critical' : 'warning',
+        'status': 'active',
+        'createdAt': now,
+        '_live': true,
+      };
+      setState(() => _incidents.insert(0, incident));
+    } else if (event == 'responders_dispatched') {
+      // Mark the first active incident as escalated and attach responder info
+      setState(() {
+        final idx = _incidents.indexWhere(
+            (i) => i['status'] == 'active' || i['status'] == 'pending');
+        if (idx != -1) {
+          _incidents[idx] = {
+            ..._incidents[idx],
+            'status': 'escalated',
+            'responders': data['responderTypes'],
+            'responderEta': data['eta'],
+          };
+        }
+      });
+    }
+  }
+
+  // ── REST ─────────────────────────────────────────────────────────
 
   Future<void> _loadIncidents() async {
     try {
@@ -30,8 +120,8 @@ class _AlertsScreenState extends State<AlertsScreen> {
         final raw = jsonDecode(res.body);
         if (raw is Map) {
           final list = raw.values
-              .where((v) => v is Map)
-              .map((v) => Map<String, dynamic>.from(v as Map))
+              .whereType<Map>()
+              .map((v) => Map<String, dynamic>.from(v))
               .toList();
           list.sort((a, b) =>
               (b['createdAt'] as int? ?? 0)
@@ -47,7 +137,6 @@ class _AlertsScreenState extends State<AlertsScreen> {
         setState(() => _loading = false);
       }
     } catch (_) {
-      // Use mock data if backend unreachable
       setState(() {
         _incidents = _mockIncidents;
         _loading = false;
@@ -68,6 +157,8 @@ class _AlertsScreenState extends State<AlertsScreen> {
       await _loadIncidents();
     } catch (_) {}
   }
+
+  // ── Build ────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -105,8 +196,13 @@ class _AlertsScreenState extends State<AlertsScreen> {
   }
 
   Widget _buildHeader() {
-    final active =
-        _incidents.where((i) => i['status'] == 'active' || i['status'] == 'pending').length;
+    final active = _incidents
+        .where((i) =>
+            i['status'] == 'active' ||
+            i['status'] == 'pending' ||
+            i['status'] == 'escalated')
+        .length;
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: const BoxDecoration(
@@ -117,11 +213,15 @@ class _AlertsScreenState extends State<AlertsScreen> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('Incident Log',
-                style: TextStyle(
-                    color: AppTheme.textPrimary,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 20)),
+            Row(children: [
+              const Text('Incident Log',
+                  style: TextStyle(
+                      color: AppTheme.textPrimary,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 20)),
+              const SizedBox(width: 10),
+              _buildLiveIndicator(),
+            ]),
             Text('${_incidents.length} total • $active active',
                 style: const TextStyle(
                     color: AppTheme.textMuted, fontSize: 12)),
@@ -171,11 +271,52 @@ class _AlertsScreenState extends State<AlertsScreen> {
     );
   }
 
+  Widget _buildLiveIndicator() {
+    return AnimatedBuilder(
+      animation: _pulseController,
+      builder: (_, __) => Row(children: [
+        Container(
+          width: 7,
+          height: 7,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: _isLive ? AppTheme.successGreen : AppTheme.textMuted,
+            boxShadow: _isLive
+                ? [
+                    BoxShadow(
+                      color: AppTheme.successGreen
+                          .withValues(alpha: _pulseController.value * 0.7),
+                      blurRadius: 6,
+                      spreadRadius: 1,
+                    )
+                  ]
+                : null,
+          ),
+        ),
+        const SizedBox(width: 4),
+        Text(
+          _isLive ? 'LIVE' : 'OFFLINE',
+          style: TextStyle(
+            color: _isLive ? AppTheme.successGreen : AppTheme.textMuted,
+            fontSize: 9,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 1,
+          ),
+        ),
+      ]),
+    );
+  }
+
   Widget _buildIncidentTile(Map<String, dynamic> incident) {
     final status = incident['status'] as String? ?? 'unknown';
     final severity = incident['severity'] as String? ?? 'info';
     final id = incident['id'] as String? ?? '';
-    final isActive = status == 'active' || status == 'pending';
+    final isLivePush = incident['_live'] == true;
+    final isActive =
+        status == 'active' || status == 'pending' || status == 'escalated';
+    final isEscalated = status == 'escalated';
+    final responders = incident['responders'] as List?;
+    final responderEta = incident['responderEta'] as String?;
 
     Color statusColor;
     Color severityColor;
@@ -199,6 +340,9 @@ class _AlertsScreenState extends State<AlertsScreen> {
       case 'active':
       case 'pending':
         statusColor = AppTheme.criticalRed;
+        break;
+      case 'escalated':
+        statusColor = const Color(0xFFFF6B35);
         break;
       case 'assigned':
         statusColor = AppTheme.warningAmber;
@@ -225,15 +369,20 @@ class _AlertsScreenState extends State<AlertsScreen> {
         color: AppTheme.bgCard,
         borderRadius: BorderRadius.circular(AppTheme.radiusCard),
         border: Border.all(
-          color: isActive
-              ? severityColor.withValues(alpha: 0.4)
-              : AppTheme.borderDefault,
+          color: isEscalated
+              ? const Color(0xFFFF6B35).withValues(alpha: 0.5)
+              : isActive
+                  ? severityColor.withValues(alpha: 0.4)
+                  : AppTheme.borderDefault,
           width: isActive ? 1.5 : 1,
         ),
         boxShadow: isActive
             ? [
                 BoxShadow(
-                  color: severityColor.withValues(alpha: 0.1),
+                  color: (isEscalated
+                          ? const Color(0xFFFF6B35)
+                          : severityColor)
+                      .withValues(alpha: 0.12),
                   blurRadius: 12,
                   offset: const Offset(0, 4),
                 ),
@@ -255,6 +404,23 @@ class _AlertsScreenState extends State<AlertsScreen> {
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
                         letterSpacing: 1.2)),
+                if (isLivePush) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AppTheme.successGreen.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text('LIVE',
+                        style: TextStyle(
+                            color: AppTheme.successGreen,
+                            fontSize: 8,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.8)),
+                  ),
+                ],
               ]),
               Row(children: [
                 if (timeStr.isNotEmpty)
@@ -271,7 +437,10 @@ class _AlertsScreenState extends State<AlertsScreen> {
                     border: Border.all(
                         color: statusColor.withValues(alpha: 0.3)),
                   ),
-                  child: Text(status.replaceAll('_', ' ').toUpperCase(),
+                  child: Text(
+                      status == 'escalated'
+                          ? 'ESCALATED'
+                          : status.replaceAll('_', ' ').toUpperCase(),
                       style: TextStyle(
                           color: statusColor,
                           fontSize: 9,
@@ -306,7 +475,35 @@ class _AlertsScreenState extends State<AlertsScreen> {
                       color: AppTheme.textMuted, fontSize: 11)),
             ]),
           ],
-          if (isActive && id.isNotEmpty) ...[
+          // Responder dispatch banner
+          if (isEscalated && responders != null && responders.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFF6B35).withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                    color: const Color(0xFFFF6B35).withValues(alpha: 0.3)),
+              ),
+              child: Row(children: [
+                const Icon(LucideIcons.siren,
+                    color: Color(0xFFFF6B35), size: 13),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '${responders.join(', ')} dispatched${responderEta != null ? ' • ETA $responderEta' : ''}',
+                    style: const TextStyle(
+                        color: Color(0xFFFF6B35),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ]),
+            ),
+          ],
+          if (isActive && id.isNotEmpty && !id.startsWith('LIVE-')) ...[
             const SizedBox(height: 12),
             Row(children: [
               Expanded(
@@ -393,8 +590,8 @@ class _EmptyState extends StatelessWidget {
           const SizedBox(height: 8),
           const Text('No active incidents.\nAll systems operational.',
               textAlign: TextAlign.center,
-              style:
-                  TextStyle(color: AppTheme.textMuted, fontSize: 14, height: 1.5)),
+              style: TextStyle(
+                  color: AppTheme.textMuted, fontSize: 14, height: 1.5)),
         ],
       ),
     );
